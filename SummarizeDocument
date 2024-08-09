@@ -1,0 +1,61 @@
+import json
+import boto3
+import os
+from anthropic import Anthropic
+
+s3 = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('DocumentMetadata')
+
+anthropic_client = Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
+
+def lambda_handler(event, context):
+    file_id = event['pathParameters']['id']
+    
+    # Retrieve file from S3
+    try:
+        response = s3.get_object(Bucket='your-document-bucket-name', Key=file_id)
+        file_content = response['Body'].read().decode('utf-8')
+    except Exception as e:
+        return {
+            'statusCode': 404,
+            'body': json.dumps('File not found')
+        }
+    
+    # Summarize using Claude
+    try:
+        completion = anthropic_client.completions.create(
+            model="claude-3.5-sonnet",
+            prompt=f"Please summarize the following document:\n\n{file_content}",
+            max_tokens_to_sample=500
+        )
+        summary = completion.completion
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Error during summarization')
+        }
+    
+    # Update metadata in DynamoDB
+    try:
+        table.update_item(
+            Key={'id': file_id},
+            UpdateExpression='SET summary = :summary, #status = :status',
+            ExpressionAttributeValues={
+                ':summary': summary,
+                ':status': 'summarized'
+            },
+            ExpressionAttributeNames={
+                '#status': 'status'
+            }
+        )
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Error updating metadata')
+        }
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps(summary)
+    }
