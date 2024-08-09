@@ -1,0 +1,28 @@
+import boto3
+import uuid
+
+s3 = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('DocumentMetadata')
+
+def lambda_handler(event, context):
+    file_content = event['body']
+    file_name = event['headers']['file-name']
+    file_id = str(uuid.uuid4())
+    
+    # Upload file to S3
+    s3.put_object(Bucket='your-document-bucket-name', Key=file_id, Body=file_content)
+    
+    # Store metadata in DynamoDB
+    table.put_item(
+        Item={
+            'id': file_id,
+            'fileName': file_name,
+            'status': 'uploaded'
+        }
+    )
+    
+    return {
+        'statusCode': 200,
+        'body': f'File uploaded successfully. ID: {file_id}'
+    }
